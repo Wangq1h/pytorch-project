@@ -43,21 +43,30 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
     
     batch_size = 16
-    lr = 1e-3  # 降低学习率
+    lr = 1e-3
     num_epochs = 1000
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # 创建数据集时启用降噪
+    # 创建训练集和测试集
     train_dataset = FeTeSeDataset(
         img_dir=img_dir, 
         label_dir=label_dir,
-        denoise=True  # 启用降噪
+        denoise=True,  # 启用降噪
+        augment=True   # 启用数据增强
     )
+    test_dataset = FeTeSeDataset(
+        img_dir="../dataset/test/images",
+        label_dir="../dataset/test/labels",
+        denoise=True,  # 启用降噪
+        augment=False  # 测试集不需要数据增强
+    )
+    
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
     
     model = UNet(in_channels=1, out_channels=2).to(device)
-    criterion = nn.BCEWithLogitsLoss()  # 使用二元交叉熵损失
+    criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # 初始化权重
@@ -71,7 +80,7 @@ def main():
     # 打开文件保存 loss
     loss_file_path = os.path.join(save_dir, "training_loss.txt")
     with open(loss_file_path, "w") as loss_file:
-        loss_file.write("Epoch,Loss\n")  # 写入表头
+        loss_file.write("Epoch,Loss\n")
         
         for epoch in range(num_epochs):
             train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
@@ -80,7 +89,7 @@ def main():
             # 保存 loss 到文件
             loss_file.write(f"{epoch+1},{train_loss:.4f}\n")
             
-            # 每 10 个 epoch 保存一次模型
+            # 每 100 个 epoch 保存一次模型
             if (epoch + 1) % 100 == 0:
                 torch.save(model.state_dict(), os.path.join(save_dir, f"unet_epoch_{epoch+1}.pth"))
         

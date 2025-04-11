@@ -12,13 +12,14 @@ CONFIG = {
     'TILE_SIZE': 1024,          # 图像分割的尺寸
     'OVERLAP_THRESHOLD': 10,    # 重叠检测的阈值
     'MIN_DISTANCE': 10,         # 最小距离约束
-    'GRID_SIZE': 14,           # 网格大小
+    'GRID_SIZE': 14,            # 网格大小
     'MIN_THRESH': 0.01,         # 最小阈值
     'NMS_KSIZE': 10,            # 非极大值抑制的核大小
     'PEAK_MIN_DISTANCE': 10,    # 峰值检测的最小距离
-    'SCALE_FACTOR': 1,         # 图像放大倍数
+    'SCALE_FACTOR': 1,          # 图像放大倍数
+    'RESIZE_TO': (512, 512),  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
     'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
-    'INPUT_DIR': '../raw/target/images'  # 输入文件夹
+    'INPUT_DIR': '../raw'    # 输入文件夹
 }
 
 def split_image(image, tile_size=None):
@@ -228,6 +229,13 @@ def process_image(image_path, model, device, tile_size=None):
     print(f"处理图像: {filename}")
     original_img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.0  # 原始图像
     img = original_img.copy()  # 复制一份用于降噪处理
+
+    # 可选：将图像resize到指定大小
+    if CONFIG['RESIZE_TO'] is not None:
+        resize_width, resize_height = CONFIG['RESIZE_TO']
+        img = cv2.resize(img, (resize_width, resize_height), interpolation=cv2.INTER_LINEAR)
+        original_img = cv2.resize(original_img, (resize_width, resize_height), interpolation=cv2.INTER_LINEAR)
+        print(f"图像已resize到: {resize_width}x{resize_height}")
     
     # 对图像进行降噪处理
     denoiser = STMDenoiser(
