@@ -61,6 +61,7 @@ def find_peaks_joint(te_heatmap, se_heatmap, grid_size=10, min_thresh=0.1, nms_k
     Returns:
         list: 检测到的原子坐标及种类 [{"x": x, "y": y, "class": "Te"}, {"x": x, "y": y, "class": "Se"}, ...]。
     """
+    se_weight = 2
     def detect_peaks(heatmap, thresh):
         """辅助函数：检测单个热力图中的峰值。"""
         mask = (heatmap > thresh).astype(np.uint8)
@@ -102,7 +103,7 @@ def find_peaks_joint(te_heatmap, se_heatmap, grid_size=10, min_thresh=0.1, nms_k
                 for lx, ly in local_te_coords:
                     local_peaks.append({"x": grid_x + lx, "y": grid_y + ly, "class": "Te", "value": te_heatmap[grid_y + ly, grid_x + lx]})
                 for lx, ly in local_se_coords:
-                    local_peaks.append({"x": grid_x + lx, "y": grid_y + ly, "class": "Se", "value": se_heatmap[grid_y + ly, grid_x + lx]})
+                    local_peaks.append({"x": grid_x + lx, "y": grid_y + ly, "class": "Se", "value": se_heatmap[grid_y + ly, grid_x + lx] * se_weight})
                 best_peak = max(local_peaks, key=lambda p: p["value"])
                 combined_peaks.append(best_peak)
             else:

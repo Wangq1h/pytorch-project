@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from models.unet import UNet
 from test import find_peaks_joint
 from denoise import STMDenoiser
+from scipy.spatial import Delaunay
 
 # 全局配置参数
 CONFIG = {
@@ -17,10 +18,12 @@ CONFIG = {
     'NMS_KSIZE': 10,            # 非极大值抑制的核大小
     'PEAK_MIN_DISTANCE': 10,    # 峰值检测的最小距离
     'SCALE_FACTOR': 1,          # 图像放大倍数
-    'RESIZE_TO': (512, 512),  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
+    'RESIZE_TO': None,  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
     'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
-    'INPUT_DIR': '../raw'    # 输入文件夹
+    'INPUT_DIR': '../raw/target/images'    # 输入文件夹
 }
+P = []
+Error= []
 
 def split_image(image, tile_size=None):
     """
@@ -87,54 +90,78 @@ def infer_and_detect(image, model, device, tile_size=None, original_img=None, fi
             coord["y"] += x
         all_coords.extend(coords)
     
-    # 绘制整张图像的标注结果
-    annotated_image = cv2.cvtColor((denoised_image * 255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
-    te_count = 0
-    se_count = 0
-    for coord in all_coords:
-        color = (255, 0, 0) if coord["class"] == "Se" else (0, 0, 255)
-        cv2.circle(annotated_image, (coord["x"], coord["y"]), 3, color, -1)
-        if coord["class"] == "Te":
-            te_count += 1
-        else:
-            se_count += 1
+    # 使用 Delaunay 三角剖分区分边界点和内部点
+    center_coords, border_coords = delaunay_boundary_detection(all_coords)
+
+    # 统计内部和边界原子的数量
+    center_te_count = sum(1 for coord in center_coords if coord["class"] == "Te")
+    center_se_count = sum(1 for coord in center_coords if coord["class"] == "Se")
+    border_te_count = sum(1 for coord in border_coords if coord["class"] == "Te")
+    border_se_count = sum(1 for coord in border_coords if coord["class"] == "Se")
 
     # 计算 Te 的掺杂比例
-    total_atoms = te_count + se_count
-    te_ratio = (te_count / total_atoms) * 100 if total_atoms > 0 else 0
+    center_total_atoms = center_te_count + center_se_count
+    border_total_atoms = border_te_count + border_se_count
+    center_te_ratio = (center_te_count / center_total_atoms) * 100 if center_total_atoms > 0 else 0
+    border_te_ratio = (border_te_count / border_total_atoms) * 100 if border_total_atoms > 0 else 0
 
-    # 在标注图像上打印信息
-    text = f"File: {filename}, Te: {te_count}, Se: {se_count}, Te Ratio: {te_ratio:.2f}%"
-    print(text)
-    # # 扩展图像高度以容纳文本
-    # text_height = 50  # 文本区域高度
-    # annotated_with_text = np.zeros((annotated_image.shape[0] + text_height, annotated_image.shape[1], 3), dtype=np.uint8)
-    # annotated_with_text[:annotated_image.shape[0], :, :] = annotated_image  # 将原始图像复制到扩展图像中
+    pc = center_te_ratio/100
+    po = border_te_ratio/100
+    SE = np.sqrt(po*(1-po)/border_total_atoms)
+    dp = np.abs(pc-po)
+    error = np.sqrt(SE**2 + dp**2)*100
+    # dp = po-pc
+    # pc = pc+1/2*dp
+    # error = 1/2*np.abs(dp)*100
 
-    # 在扩展区域中打印文本
-    # cv2.putText(annotated_with_text, text, (10, annotated_image.shape[0] + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    P.append(pc*100)
+    Error.append(error)
 
-    # 保存整张图像的结果
-    output_dir = CONFIG['OUTPUT_DIR']
-    os.makedirs(output_dir, exist_ok=True)
+    # 输出到文件
+    output_file = os.path.join(CONFIG['OUTPUT_DIR'], "results.txt")
+    with open(output_file, "a") as f:
+        f.write(f"File: {filename}, Center - Te: {center_te_count}, Se: {center_se_count}, Te Ratio: {center_te_ratio:.2f}%, "
+                f"Border - Te: {border_te_count}, Se: {border_se_count}, Te Ratio: {border_te_ratio:.2f}%\n")
+        print(f"结果已保存到: {output_file}")
+
+    # 在原图上绘制标注
+    annotated_image = (original_img * 255).astype(np.uint8)  # 将原图转换为 uint8
+    if len(annotated_image.shape) == 2:  # 如果是灰度图，转换为 RGB
+        annotated_image = cv2.cvtColor(annotated_image, cv2.COLOR_GRAY2RGB)
+    
+    # 绘制内部原子
+    for coord in center_coords:
+        if coord["class"] == "Te":
+            color = (0, 0, 255)  # 红色
+        else:
+            color = (0, 255, 0)  # 绿色
+        cv2.circle(annotated_image, (coord["x"], coord["y"]), 3, color, -1)
+    
+    # 绘制边界原子
+    for coord in border_coords:
+        if coord["class"] == "Te":
+            color = (0, 255, 255)  # 黄色
+        else:
+            color = (255, 0, 0)  # 蓝色
+        cv2.circle(annotated_image, (coord["x"], coord["y"]), 3, color, -1)
+
+    # 保存标注图像
+    annotated_path = os.path.join(CONFIG['OUTPUT_DIR'], f"{filename}_annotated.png")
+    cv2.imwrite(annotated_path, annotated_image)
+    print(f"标注图像已保存到: {annotated_path}")
 
     # 保存降噪图像
-    denoised_path = os.path.join(output_dir, f"{filename}_denoised.png")
+    denoised_path = os.path.join(CONFIG['OUTPUT_DIR'], f"{filename}_denoised.png")
     cv2.imwrite(denoised_path, (denoised_image * 255).astype(np.uint8))
     print(f"降噪图像已保存到: {denoised_path}")
 
     # 保存热力图
-    heatmap_path = os.path.join(output_dir, f"{filename}_heatmap.png")
+    heatmap_path = os.path.join(CONFIG['OUTPUT_DIR'], f"{filename}_heatmap.png")
     combined_heatmap_rgb = np.zeros((height, width, 3), dtype=np.uint8)
     combined_heatmap_rgb[:, :, 0] = (combined_heatmap[0] * 255).astype(np.uint8)  # Te - 红色通道
     combined_heatmap_rgb[:, :, 2] = (combined_heatmap[1] * 255).astype(np.uint8)  # Se - 蓝色通道
     cv2.imwrite(heatmap_path, combined_heatmap_rgb)
     print(f"热力图已保存到: {heatmap_path}")
-
-    # 保存标注图像
-    annotated_path = os.path.join(output_dir, f"{filename}_annotated.png")
-    cv2.imwrite(annotated_path, annotated_image)
-    print(f"标注图像已保存到: {annotated_path}")
 
     return all_coords
 
@@ -258,6 +285,93 @@ def process_image(image_path, model, device, tile_size=None):
     # 推理和寻峰
     all_coords = infer_and_detect(img, model, device, tile_size, original_img, filename)
 
+def delaunay_boundary_detection(coords, image_shape=None, margin=10):
+    """
+    基于 Delaunay 三角剖分区分边界点和内部点，并考虑图像边缘的点。
+    Args:
+        coords (list): 原子坐标列表，每个坐标是一个字典，包含 "x" 和 "y"。
+        image_shape (tuple): 图像的形状 (height, width)，用于检测图像边缘的点。
+        margin (int): 边缘点的检测范围。
+    Returns:
+        tuple: (内部点列表, 边界点列表)
+    """
+    # 提取点的坐标
+    points = np.array([[coord["x"], coord["y"]] for coord in coords])
+    
+    # 进行 Delaunay 三角剖分
+    tri = Delaunay(points)
+    
+    # 统计边的出现次数
+    edge_count = {}
+    for simplex in tri.simplices:
+        edges = [
+            tuple(sorted([simplex[0], simplex[1]])),
+            tuple(sorted([simplex[1], simplex[2]])),
+            tuple(sorted([simplex[2], simplex[0]]))
+        ]
+        for edge in edges:
+            if edge in edge_count:
+                edge_count[edge] += 1
+            else:
+                edge_count[edge] = 1
+    
+    # 提取边界边（出现次数为 1 的边）
+    boundary_edges = [edge for edge, count in edge_count.items() if count == 1]
+    
+    # 提取边界点
+    boundary_points = set()
+    for edge in boundary_edges:
+        boundary_points.update(edge)
+    
+    # 如果提供了图像形状，进一步检测图像边缘的点
+    if image_shape is not None:
+        height, width = image_shape
+        for i, point in enumerate(points):
+            if (
+                point[0] < margin or point[0] > width - margin or
+                point[1] < margin or point[1] > height - margin
+            ):
+                boundary_points.add(i)
+    
+    # 提取内部点
+    all_points = set(range(len(points)))
+    internal_points = all_points - boundary_points
+    
+    # 将点索引转换回原始坐标
+    boundary_coords = [coords[i] for i in boundary_points]
+    internal_coords = [coords[i] for i in internal_points]
+    
+    return internal_coords, boundary_coords
+
+import matplotlib.pyplot as plt
+
+def plot_doping_concentration(output_dir):
+    """
+    根据结果文件绘制掺杂浓度曲线。
+    Args:
+        results_file (str): 包含掺杂浓度结果的文件路径。
+        output_dir (str): 保存绘图的输出目录。
+    """
+    # 读取结果文件
+    image_indices = np.arange(1,21)
+    center_ratios = P
+    errors = Error
+
+    # 绘制掺杂浓度曲线
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(image_indices, center_ratios, yerr=errors, fmt='-o', capsize=5, label="Te Doping Concentration")
+    plt.xlabel("Image Index")
+    plt.ylabel("Te Doping Concentration (%)")
+    plt.title("Te Doping Concentration vs Image Index")
+    plt.grid(True)
+    plt.legend()
+
+    # 保存图像
+    plot_path = os.path.join(output_dir, "doping_concentration_plot.png")
+    plt.savefig(plot_path)
+    print(f"掺杂浓度曲线已保存到: {plot_path}")
+    plt.close()
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet(in_channels=1, out_channels=2).to(device)
@@ -265,11 +379,24 @@ def main():
     model.eval()
 
     input_dir = CONFIG['INPUT_DIR']
-    for image_file in os.listdir(input_dir):
-        if image_file.endswith(('.png', '.jpg', '.jpeg')):
-            image_path = os.path.join(input_dir, image_file)
-            print(f"处理图像: {image_path}")
-            process_image(image_path, model, device)
+    output_file = os.path.join(CONFIG['OUTPUT_DIR'], "results.txt")
+    
+    # 清空结果文件
+    with open(output_file, "w") as f:
+        f.write("")  # 清空文件内容
+    
+    # 获取文件列表并按序号排序
+    image_files = sorted(
+        [f for f in os.listdir(input_dir) if f.endswith(('.png', '.jpg', '.jpeg'))],
+        key=lambda x: int(x.split('-')[0])  # 提取文件名中的序号并排序
+    )
+    
+    for image_file in image_files:
+        image_path = os.path.join(input_dir, image_file)
+        print(f"处理图像: {image_path}")
+        process_image(image_path, model, device)
+    
+    plot_doping_concentration(CONFIG['OUTPUT_DIR'])
 
 if __name__ == "__main__":
     main()

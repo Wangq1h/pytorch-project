@@ -7,12 +7,20 @@ from dataset import FeTeSeDataset
 from models.unet import UNet
 
 def train_one_epoch(model, dataloader, optimizer, criterion, device):
+    print(f"Model is on device: {next(model.parameters()).device}")
     model.train()
+    # for img, heatmap in dataloader:
+    #     print(f"Image is on device: {img.device}")
+    #     print(f"Heatmap is on device: {heatmap.device}")
+    #     break
     total_loss = 0.0
     for img, heatmap in dataloader:
-        img = img.to(device)            # shape: (B, 1, H, W)
-        heatmap = heatmap.to(device)    # shape: (B, 2, H, W)
+        img = img.to(device, non_blocking=True)  # 使用 non_blocking=True 加速数据传输
+        heatmap = heatmap.to(device, non_blocking=True)    # shape: (B, 2, H, W)
         
+        # print(f"Image is on device: {img.device}")
+        # print(f"Heatmap is on device: {heatmap.device}")
+
         # 检查数据是否包含 NaN 或 Inf
         assert not torch.isnan(img).any(), "Input image contains NaN"
         assert not torch.isnan(heatmap).any(), "Heatmap contains NaN"
@@ -50,23 +58,30 @@ def main():
     
     # 创建训练集和测试集
     train_dataset = FeTeSeDataset(
-        img_dir=img_dir, 
+        img_dir=img_dir,
         label_dir=label_dir,
-        denoise=True,  # 启用降噪
-        augment=True   # 启用数据增强
+        transform=None,
+        denoise=True
     )
-    test_dataset = FeTeSeDataset(
-        img_dir="../dataset/test/images",
-        label_dir="../dataset/test/labels",
-        denoise=True,  # 启用降噪
-        augment=False  # 测试集不需要数据增强
-    )
+    # test_dataset = FeTeSeDataset(
+    #     img_dir="../dataset/test/images",
+    #     label_dir="../dataset/test/labels",
+    #     transform=None,
+    #     denoise=True
+    # )
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True, 
+        num_workers=4, pin_memory=True, prefetch_factor=2
+    )
+    # test_loader = DataLoader(
+    #     test_dataset, batch_size=batch_size, shuffle=False, 
+    #     num_workers=4, pin_memory=True
+    # )
     
     model = UNet(in_channels=1, out_channels=2).to(device)
-    criterion = nn.BCEWithLogitsLoss()
+    # print(f"Model is on device: {next(model.parameters()).device}")
+    criterion = nn.BCEWithLogitsLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # 初始化权重

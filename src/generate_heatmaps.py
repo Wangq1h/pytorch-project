@@ -27,12 +27,12 @@ def generate_heatmap(coords, img_shape, sigma=2, intensity=1.0):
     return heatmap
 
 def main():
-    # img_dir = "../data/images"  # 原始图像文件夹
-    # label_dir = "../data/labels"  # JSON 文件夹
-    # output_dir = "../data/labels_npy"  # 输出 .npy 文件夹
-    img_dir = "../raw/target"  # 原始图像文件夹
-    label_dir = "../raw/target"  # JSON 文件夹
-    output_dir = "../raw/target"  # 输出 .npy 文件夹
+    img_dir = "../data/images"  # 原始图像文件夹
+    label_dir = "../data/labels"  # JSON 文件夹
+    output_dir = "../data/labels_npy"  # 输出 .npy 文件夹
+    # img_dir = "../raw/target"  # 原始图像文件夹
+    # label_dir = "../raw/target"  # JSON 文件夹
+    # output_dir = "../raw/target"  # 输出 .npy 文件夹
     os.makedirs(output_dir, exist_ok=True)
 
     # 遍历 labels 文件夹中的每个 JSON 文件
