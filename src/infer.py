@@ -7,23 +7,94 @@ from models.unet import UNet
 from test import find_peaks_joint
 from denoise import STMDenoiser
 from scipy.spatial import Delaunay
+from scipy.ndimage import maximum_filter
+from tqdm import tqdm
 
+
+grid_size = 14
+ratio = 0.714
 # 全局配置参数
 CONFIG = {
-    'TILE_SIZE': 1024,          # 图像分割的尺寸
-    'OVERLAP_THRESHOLD': 10,    # 重叠检测的阈值
-    'MIN_DISTANCE': 10,         # 最小距离约束
-    'GRID_SIZE': 14,            # 网格大小
+    'TILE_SIZE': 512,          # 图像分割的尺寸
+    'OVERLAP_THRESHOLD': int(grid_size * ratio),    # 重叠检测的阈值
+    'MIN_DISTANCE': int(grid_size * ratio),         # 最小距离约束
+    'GRID_SIZE': grid_size,            # 网格大小
     'MIN_THRESH': 0.01,         # 最小阈值
-    'NMS_KSIZE': 10,            # 非极大值抑制的核大小
-    'PEAK_MIN_DISTANCE': 10,    # 峰值检测的最小距离
-    'SCALE_FACTOR': 1,          # 图像放大倍数
+    'NMS_KSIZE': int(grid_size * ratio),            # 非极大值抑制的核大小
+    'PEAK_MIN_DISTANCE': int(grid_size * ratio),    # 峰值检测的最小距离
+    'SCALE_FACTOR': 2,          # 图像放大倍数 对于
     'RESIZE_TO': None,  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
     'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
-    'INPUT_DIR': '../raw/target/images'    # 输入文件夹
+    'INPUT_DIR': '../raw/target/images/BIG/1-1'    # 输入文件夹
 }
 P = []
 Error= []
+
+from scipy.ndimage import maximum_filter, gaussian_gradient_magnitude
+from skimage.feature import peak_local_max
+
+# def determine_grid_size(heatmap, tolerance=4, min_distance=5):
+#     """
+#     动态确定 grid_size，通过结合局部最大值检测、非极大值抑制和梯度检测的方法。
+#     Args:
+#         heatmap (numpy.ndarray): 输入的热力图，形状为 (2, H, W)。
+#         tolerance (int): 容错范围，允许 y 值有一定的偏移。
+#         min_distance (int): 非极大值抑制的最小距离。
+#     Returns:
+#         int: 动态计算得到的 grid_size。
+#     """
+#     # 将两个通道的热力图合并为一个
+#     combined_heatmap = np.maximum(heatmap[0], heatmap[1])
+
+#     # 1. 计算梯度强度
+#     gradient_magnitude = gaussian_gradient_magnitude(combined_heatmap, sigma=1)
+
+#     # 2. 局部最大值检测
+#     local_max = maximum_filter(combined_heatmap, size=3)  # 3x3 滤波器
+#     peaks = (combined_heatmap == local_max)  # 局部最大值
+
+#     # 3. 非极大值抑制
+#     coordinates = peak_local_max(
+#         combined_heatmap,
+#         min_distance=min_distance,
+#         exclude_border=False,  # 考虑边界点
+#         footprint=np.ones((3, 3))  # 定义局部邻域
+#     )
+
+#     # 将非极大值抑制的结果转换为二值图像
+#     nms_map = np.zeros_like(combined_heatmap, dtype=np.uint8)
+#     for coord in coordinates:
+#         nms_map[coord[0], coord[1]] = 1
+
+#     # 4. 结合梯度和非极大值抑制结果
+#     final_peaks = nms_map & (gradient_magnitude > 0)  # 梯度强度大于 0 的点
+
+#     # 找到所有的非零点（可能的峰值）
+#     points = np.column_stack(np.where(final_peaks > 0))  # (y, x) 坐标
+#     print(f"找到 {len(points)} 个可能的峰值点")
+#     print(f"热力图的形状: {heatmap.shape}")
+
+#     # 按 y 值分组，统计每一行的点数
+#     rows = {}
+#     for y, x in points:
+#         found_row = False
+#         for row_y in rows.keys():
+#             if abs(row_y - y) <= tolerance:  # 容错范围内归为同一行
+#                 rows[row_y].append(x)
+#                 found_row = True
+#                 break
+#         if not found_row:
+#             rows[y] = [x]
+
+#     # 找到点数最多的一行
+#     max_row = max(rows.values(), key=len)
+#     print(f"最多的行有 {len(max_row)} 个点")
+
+#     # 计算 grid_size
+#     image_width = heatmap.shape[2]  # 热力图的宽度
+#     grid_size = int(image_width / len(max_row))
+#     print(f"动态计算的 grid_size: {grid_size}")
+#     return grid_size
 
 def split_image(image, tile_size=None):
     """
@@ -37,11 +108,22 @@ def split_image(image, tile_size=None):
     if tile_size is None:
         tile_size = CONFIG['TILE_SIZE']
     height, width = image.shape
+    # tiles = []
+    # for i in range(0, height, tile_size):
+    #     for j in range(0, width, tile_size):
+    #         tile = image[i:i + tile_size, j:j + tile_size]
+    #         tiles.append((tile, (i, j)))
+    # return tiles
+    # 计算能被整除的区域
+    valid_height = (height // tile_size) * tile_size
+    valid_width = (width // tile_size) * tile_size
+
     tiles = []
-    for i in range(0, height, tile_size):
-        for j in range(0, width, tile_size):
+    for i in range(0, valid_height, tile_size):
+        for j in range(0, valid_width, tile_size):
             tile = image[i:i + tile_size, j:j + tile_size]
             tiles.append((tile, (i, j)))
+    
     return tiles
 
 def infer_and_detect(image, model, device, tile_size=None, original_img=None, filename=None):
@@ -58,7 +140,7 @@ def infer_and_detect(image, model, device, tile_size=None, original_img=None, fi
     denoised_image = np.zeros_like(image)  # 用于存储整张图像的降噪结果
     all_coords = []
 
-    for (tile, (x, y)), (original_tile, _) in zip(tiles, original_tiles):
+    for (tile, (x, y)), (original_tile, _) in tqdm(zip(tiles, original_tiles), total=len(tiles), desc="Processing tiles"):
         # 转换为张量并推理
         tile_tensor = torch.from_numpy(tile).unsqueeze(0).unsqueeze(0).float().to(device)
         with torch.no_grad():
@@ -75,6 +157,11 @@ def infer_and_detect(image, model, device, tile_size=None, original_img=None, fi
         # 合并降噪图像
         denoised_image[x:x+tile.shape[0], y:y+tile.shape[1]] = tile
         
+        # if CONFIG['GRID_SIZE'] == 0:
+        #     # 动态确定 grid_size
+        #     CONFIG['GRID_SIZE'] = determine_grid_size(pred_heatmap)
+        #     print(f"动态确定的 grid_size: {CONFIG['GRID_SIZE']}")
+
         # 寻峰
         coords = find_peaks_joint(
             te_heatmap=pred_heatmap[0],
@@ -285,7 +372,7 @@ def process_image(image_path, model, device, tile_size=None):
     # 推理和寻峰
     all_coords = infer_and_detect(img, model, device, tile_size, original_img, filename)
 
-def delaunay_boundary_detection(coords, image_shape=None, margin=10):
+def delaunay_boundary_detection(coords, image_shape=(512,512), margin=10):
     """
     基于 Delaunay 三角剖分区分边界点和内部点，并考虑图像边缘的点。
     Args:
@@ -375,7 +462,8 @@ def plot_doping_concentration(output_dir):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet(in_channels=1, out_channels=2).to(device)
-    model.load_state_dict(torch.load("checkpoints/unet_final.pth", map_location=device))
+    # model.load_state_dict(torch.load("checkpoints/unet_final.pth", map_location=device))
+    model.load_state_dict(torch.load("../archive/250413-augmented-1000epoch/unet_final.pth", map_location=device))
     model.eval()
 
     input_dir = CONFIG['INPUT_DIR']

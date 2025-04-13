@@ -61,7 +61,7 @@ def find_peaks_joint(te_heatmap, se_heatmap, grid_size=10, min_thresh=0.1, nms_k
     Returns:
         list: 检测到的原子坐标及种类 [{"x": x, "y": y, "class": "Te"}, {"x": x, "y": y, "class": "Se"}, ...]。
     """
-    se_weight = 2
+    se_weight = 1
     def detect_peaks(heatmap, thresh):
         """辅助函数：检测单个热力图中的峰值。"""
         mask = (heatmap > thresh).astype(np.uint8)
@@ -210,7 +210,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     model = UNet(in_channels=1, out_channels=2).to(device)
-    model.load_state_dict(torch.load("checkpoints/unet_final.pth", map_location=device))
+    model.load_state_dict(torch.load("../archive/250413-augmented-1000epoch/unet_final.pth", map_location=device))
     model.eval()
     
     test_img_dir = "../dataset/test/images"
