@@ -1,134 +1,296 @@
 # PyTorch Project for STM Image Analysis
 
-This project implements a deep learning pipeline using PyTorch for analyzing Scanning Tunneling Microscopy (STM) images. The goal is to detect and locate atomic structures within STM images by generating heatmaps and training a U-Net model.
+本项目使用深度学习技术（基于 PyTorch）对扫描隧道显微镜（STM）图像进行分析，目标是检测和定位图像中的原子结构，生成热力图并计算掺杂浓度。
 
-## Project Structure
+---
 
-The project is organized as follows:
+## 项目结构
 
 ```
 pytorch-project
 ├── data
-│   ├── images          # Directory containing raw STM images
-│   └── labels          # Directory storing generated heatmap labels
+│   ├── images          # 原始 STM 图像
+│   ├── labels          # 热力图标签
+│   ├── labels_npy      # 热力图标签的 NumPy 格式
+│   ├── augmented       # 数据增强后的图像
+│   ├── denoised        # 降噪后的图像
+│   ├── visualizations  # 可视化结果
+├── raw
+│   ├── images          # 原始未处理的图像
+│   ├── labels          # 原始标注
+│   ├── processed       # 处理后的图像
+│   ├── target          # 目标图像和结果
 ├── src
-│   ├── dataset.py      # Defines the FeTeSeDataset class for loading images and labels
-│   ├── generate_heatmaps.py  # Script for generating heatmap labels from JSON annotations
-│   ├── train.py        # Training script for the U-Net model
-│   ├── test.py         # Testing script for evaluating the trained model
+│   ├── annotate.py         # 图像标注工具
+│   ├── augment.py          # 数据增强脚本
+│   ├── dataset.py          # 数据加载类
+│   ├── debug_peaks.py      # 调试峰值检测
+│   ├── denoise.py          # 图像降噪工具
+│   ├── divide.py           # 图像分割工具
+│   ├── finetune.py         # 模型微调脚本
+│   ├── generate_heatmaps.py# 生成热力图标签
+│   ├── infer.py            # 推理脚本
+│   ├── test.py             # 测试脚本
+│   ├── train.py            # 训练脚本
 │   └── models
-│       └── unet.py     # Implementation of the U-Net architecture
-├── requirements.txt     # Lists project dependencies
-└── README.md            # Documentation for the project
+│       └── unet.py         # U-Net 模型实现
+├── archive
+│   ├── 250401-48train-10000epoch-85%    # 训练模型的存档
+│   ├── 250413-augmented-1000epoch       # 数据增强后的训练存档
+├── requirements.txt     # 项目依赖
+├── README.md            # 项目说明文档
 ```
 
-## Installation
+## 安装
 
-To set up the project, clone the repository and install the required dependencies:
+1. 克隆项目到本地：
+
+   ```bash
+   git clone https://github.com/your-repo/pytorch-project.git
+   cd pytorch-project
+   ```
+2. 安装依赖：
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+---
+
+## 数据准备
+
+1. **原始 STM 图像**：
+   将原始 STM 图像放置在 `data/images` 文件夹中，图像应为 PNG 格式，大小为 512x512 像素。
+2. **标注文件**：
+   创建 JSON 文件，包含图像中原子的坐标和类别。格式如下：
+
+   ```json
+   {
+       "image_001.png": [
+           {"x": 30, "y": 40, "class": "Te"},
+           {"x": 60, "y": 100, "class": "Se"}
+       ],
+       "image_002.png": [
+           {"x": 28, "y": 38, "class": "Te"}
+       ]
+   }
+   ```
+3. **生成热力图**：
+   运行 `generate_heatmaps.py` 脚本，将 JSON 标注文件转换为 `.npy` 格式的热力图标签：
+
+   ```bash
+   python generate_heatmaps.py
+   ```
+4. **数据增强：**
+   运行 `augment.py`脚本，每张原始图像将生成五张增强后的图像。
+5. **划分数据集：**
+
+   运行 `seperate.py`，将按照3-1比例划分数据集。
+
+---
+
+## 使用方法
+
+### 1. 训练模型
+
+运行以下命令以训练 U-Net 模型：
+
+```bash
+python train.py
+```
+
+训练完成后，模型权重将保存在 `checkpoints` 文件夹中。
+
+### 2. 测试模型
+
+使用以下命令测试模型：
+
+```bash
+python test.py
+```
+
+测试脚本将加载训练好的模型，处理测试图像，并输出预测的热力图和检测到的原子坐标。
+
+### 3. 推理
+
+运行以下命令对新图像进行推理：
+
+```bash
+python infer.py
+```
+
+推理脚本将生成热力图、标注结果和掺杂浓度曲线。
+
+---
+
+## 主要功能
+
+### 1. **图像标注**
+
+#### 功能说明
+
+`annotate.py` 提供了一个交互式工具，用于对 STM 图像中的原子进行标注。用户可以通过点击图像来标注原子的位置，并为每个原子指定类别（如 `Te` 或 `Se`）。
+
+#### 算法逻辑
+
+- 加载图像并显示。
+- 用户点击图像以标注原子位置。右击为Te原子，左击为Se原子。
+- 按 `q`退出标注，按 `s`保存当前图像的标注。
+- 借助 `finetune.py`可以进行微调，在之前的基础上，鼠标停留在要删除的原子位置按 `r`可以移除原子。
+- 将标注结果保存为 JSON 文件，格式如下：
+  ```json
+  {
+      "image_001.png": [
+          {"x": 30, "y": 40, "class": "Te"},
+          {"x": 60, "y": 100, "class": "Se"}
+      ]
+  }
+  ```
+
+---
+
+### 2. **数据增强**
+
+#### 功能说明
+
+augment.py 用于对图像和标注数据进行数据增强，包括随机缩放、旋转、裁剪或填补等操作，以扩充数据集。
+
+#### 算法逻辑
+
+- 随机生成缩放比例（0.5-1.5）和旋转角度（0-90）。
+- 对图像进行缩放和旋转，同时调整标注坐标。
+- 将图像裁剪或填补到目标大小。
+- 保存增强后的图像和对应的标注文件。
+
+---
+
+### 3. **图像降噪**
+
+#### 功能说明
+
+`denoise.py` 提供了多种降噪方法（如中值滤波和平面拟合），用于去除 STM 图像中的噪声。
+
+#### 算法逻辑
+
+- **中值滤波**：使用指定大小的滤波核去除线性噪声。
+- **平面拟合**：通过拟合图像的背景平面并减去背景，去除全局噪声。
+
+#### 使用说明
+
+已经将降噪集成到 `dataset.py`中。
+
+---
+
+### 4. **网络模型**
+
+#### 功能说明
+
+unet.py 实现了一个增强版的 U-Net 模型，用于生成 STM 图像的热力图。
+
+#### 算法逻辑
+
+- **编码器**：通过多层卷积和池化操作提取图像特征。
+- **解码器**：通过上采样和跳跃连接恢复图像的空间信息。
+- **增强模块**：
+  - **残差块**：增强特征传递能力。
+  - **注意力模块**：通过空间注意力机制增强特征表示。
+
+---
+
+### 5. **热力图生成**
+
+#### 功能说明
+
+`generate_heatmaps.py` 根据标注文件生成热力图，用于训练模型。
+
+#### 算法逻辑
+
+- 加载标注文件和对应的图像。
+- 根据标注的原子位置，在图像上生成高斯分布的热力图。
+- 保存热力图为 `.npy` 格式。
+
+---
+
+### 6. **推理**
+
+#### 功能说明
+
+infer.py 用于对新图像进行推理，生成热力图、标注结果和掺杂浓度曲线。
+
+#### 算法逻辑
+
+- **图像分割**：将大图像分割为小块，逐块推理。
+- **热力图生成**：使用训练好的模型生成热力图。
+- **峰值检测**：结合局部最大值检测和非极大值抑制，提取原子位置。
+- **掺杂浓度计算**：统计不同类别原子的数量，计算掺杂浓度。
+
+#### 使用说明
+
+运行以下命令进行推理：
+
+```bash
+python src/infer.py
+```
+
+推理结果将保存到 results 文件夹中。
+
+---
+
+### 7. **寻峰算法**
+
+#### 功能说明
+
+test.py 和 infer.py 中实现了峰值检测算法，用于从热力图中提取原子位置。
+
+#### 算法逻辑
+
+- **局部最大值检测**：使用滑动窗口找到局部最大值。
+- **非极大值抑制**：去除相邻区域内的非最大值。
+- **动态阈值**：根据热力图的强度分布动态调整阈值。
+- **联合检测**：在多个通道的热力图中联合检测峰值，确保同一格点内只保留热力最高的峰。
+
+#### 使用说明
+
+峰值检测在测试和推理过程中自动调用，无需单独运行。
+
+---
+
+## 依赖
+
+项目依赖以下 Python 包：
+
+- `torch`
+- `torchvision`
+- `numpy`
+- `opencv-python`
+- `matplotlib`
+- `scipy`
+- `scikit-image`
+- `tqdm`
+
+使用以下命令安装依赖：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Data Preparation
+---
 
-1. **STM Images**: Place your raw STM images in the `data/images` directory. Each image should be in PNG format and sized 512x512 pixels.
-2. **Annotations**: Create JSON files containing the coordinates and classes of the atoms in each image. The format should be as follows:
+## 结果可视化
 
-```json
-{
-  "image_001.png": [
-    {"x": 30, "y": 40, "class": "Te"},
-    {"x": 60, "y": 100, "class": "Se"}
-  ],
-  "image_002.png": [
-    {"x": 28, "y": 38, "class": "Te"}
-  ]
-}
-```
+1. **热力图**：
+   推理脚本会生成热力图，显示原子类别的分布。
+2. **掺杂浓度曲线**：
+   推理脚本会绘制掺杂浓度随图像索引的变化曲线，并保存为 PNG 文件。
 
-3. **Generate Heatmaps**: Run the `generate_heatmaps.py` script to convert the JSON annotations into heatmap labels saved as `.npy` files in the `data/labels` directory.
+---
 
-## Training the Model
+## 贡献
 
-To train the U-Net model, execute the following command:
+如果您对本项目有任何建议或改进，欢迎提交 Issue 或 Pull Request。
 
-```bash
-python src/train.py
-```
+---
 
-This script will load the images and heatmaps, set up the model, and begin training. The trained model will be saved in the `checkpoints` directory.
+## 许可证
 
-$$
-
-
-$$
-
-## Testing the Model
-
-After training, you can test the model using:
-
-```bash
-python src/test.py
-```
-
-This script will load the trained model, process test images, and output the predicted heatmaps along with the detected atomic coordinates.
-
-## Requirements
-
-The project requires the following Python packages:
-
-- torch
-- torchvision
-- numpy
-- opencv-python
-- matplotlib
-
-You can install these packages using the provided `requirements.txt`.
-
-## Conclusion
-
-This project provides a comprehensive framework for analyzing STM images using deep learning techniques. You can customize the model architecture, training parameters, and data processing methods to suit your specific needs. Happy coding!
-
-
-```mermaid
-graph TD
-    A[开始] --> B[加载数据集]
-    B --> C[数据预处理]
-    C --> D[生成热力图]
-    D --> E[训练神经网络模型]
-    E --> F[模型推理]
-    F --> G[联合寻峰算法检测原子坐标]
-    G --> H[生成 JSON 文件]
-    H --> I[可视化结果]
-    I --> J[结束]
-
-    subgraph 数据加载与预处理
-        B --> B1[加载图像数据]
-        B --> B2[加载标注数据]
-        C --> C1[生成训练数据]
-        C --> C2[生成测试数据]
-    end
-
-    subgraph 模型训练
-        E --> E1[初始化 U-Net 模型]
-        E --> E2[定义损失函数]
-        E --> E3[定义优化器]
-        E --> E4[训练多个 Epoch]
-        E4 --> E5[保存模型权重]
-    end
-
-    subgraph 推理与后处理
-        F --> F1[加载训练好的模型]
-        F --> F2[对输入图像进行推理]
-        F --> F3[生成预测热力图]
-        G --> G1[联合处理 Te 和 Se 热力图]
-        G --> G2[应用最小距离约束]
-    end
-
-    subgraph 结果保存与可视化
-        H --> H1[保存原子坐标到 JSON 文件]
-        I --> I1[生成可视化图片]
-        I --> I2[显示预测与真实结果对比]
-    end
-```
+本项目遵循 MIT 许可证。

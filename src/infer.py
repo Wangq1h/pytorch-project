@@ -22,13 +22,14 @@ CONFIG = {
     'MIN_THRESH': 0.01,         # 最小阈值
     'NMS_KSIZE': int(grid_size * ratio),            # 非极大值抑制的核大小
     'PEAK_MIN_DISTANCE': int(grid_size * ratio),    # 峰值检测的最小距离
-    'SCALE_FACTOR': 2,          # 图像放大倍数 对于
+    'SCALE_FACTOR': 1,          # 图像放大倍数 对于
     'RESIZE_TO': None,  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
     'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
-    'INPUT_DIR': '../raw/target/images/BIG/1-1'    # 输入文件夹
+    'INPUT_DIR': '../raw/target/images'    # 输入文件夹
 }
 P = []
 Error= []
+Te = []
 
 from scipy.ndimage import maximum_filter, gaussian_gradient_magnitude
 from skimage.feature import peak_local_max
@@ -194,15 +195,17 @@ def infer_and_detect(image, model, device, tile_size=None, original_img=None, fi
 
     pc = center_te_ratio/100
     po = border_te_ratio/100
-    SE = np.sqrt(po*(1-po)/border_total_atoms)
-    dp = np.abs(pc-po)
-    error = np.sqrt(SE**2 + dp**2)*100
+    # SE = np.sqrt(po*(1-po)/border_total_atoms)
+    # dp = np.abs(pc-po)
+    # error = np.sqrt(SE**2 + dp**2)*100
+    error = 1
     # dp = po-pc
     # pc = pc+1/2*dp
     # error = 1/2*np.abs(dp)*100
 
     P.append(pc*100)
     Error.append(error)
+    Te.append(center_te_count+border_te_count)
 
     # 输出到文件
     output_file = os.path.join(CONFIG['OUTPUT_DIR'], "results.txt")
@@ -372,7 +375,7 @@ def process_image(image_path, model, device, tile_size=None):
     # 推理和寻峰
     all_coords = infer_and_detect(img, model, device, tile_size, original_img, filename)
 
-def delaunay_boundary_detection(coords, image_shape=(512,512), margin=10):
+def delaunay_boundary_detection(coords, image_shape=None, margin=50):
     """
     基于 Delaunay 三角剖分区分边界点和内部点，并考虑图像边缘的点。
     Args:
@@ -447,7 +450,9 @@ def plot_doping_concentration(output_dir):
     # 绘制掺杂浓度曲线
     plt.figure(figsize=(10, 6))
     plt.errorbar(image_indices, center_ratios, yerr=errors, fmt='-o', capsize=5, label="Te Doping Concentration")
+    plt.plot(image_indices, Te, 'r--', label="Total Te Atoms")
     plt.xlabel("Image Index")
+    plt.ylim(580,760)
     plt.ylabel("Te Doping Concentration (%)")
     plt.title("Te Doping Concentration vs Image Index")
     plt.grid(True)
