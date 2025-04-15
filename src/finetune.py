@@ -75,7 +75,7 @@ def visualize(image_path, json_path, output_dir):
         return
 
     # 将图像调整为 128x128
-    current_image = cv2.resize(current_image, (128, 128))
+    current_image = cv2.resize(current_image, (512, 512))
     pan_offset = [0, 0]  # 重置平移偏移量
 
     # 创建窗口
