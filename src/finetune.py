@@ -8,7 +8,7 @@ import numpy as np  # 用于处理热力图
 annotations = []
 current_image = None
 selected_atom = None  # 当前选中的原子索引
-zoom_factor = 4  # 固定放大倍数（128x128 -> 512x512）
+zoom_factor = 1  # 固定放大倍数（128x128 -> 512x512）
 pan_offset = [0, 0]  # 平移偏移量
 start_pan = None  # 用于记录鼠标拖动的起始点
 
@@ -75,12 +75,12 @@ def visualize(image_path, json_path, output_dir):
         return
 
     # 将图像调整为 128x128
-    current_image = cv2.resize(current_image, (128, 128))
+    current_image = cv2.resize(current_image, (512, 512))
     pan_offset = [0, 0]  # 重置平移偏移量
 
     # 创建窗口
     cv2.namedWindow("Interactive Visualization", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Interactive Visualization", 512, 512)
+    cv2.resizeWindow("Interactive Visualization", 1024, 1024)
     cv2.setMouseCallback("Interactive Visualization", mouse_callback)
 
     # 加载标注
@@ -215,8 +215,8 @@ def process_heatmaps(te_heatmap, se_heatmap):
 
 # 示例调用
 if __name__ == "__main__":
-    image_path = "../raw/images"
-    json_path = "../raw/labels"
+    image_path = "../raw/target/finetune/images"
+    json_path = "../raw/target/finetune/labels"
     output_dir = "../raw/processed"  # 存放修正后的图片和 JSON 文件的目录
     os.makedirs(output_dir, exist_ok=True)
 

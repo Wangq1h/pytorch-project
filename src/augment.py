@@ -114,7 +114,7 @@ def process_all_files(images_dir, labels_dir, output_dir, num_augmentations=5, s
                 augment_image_and_labels(image_path, json_path, output_dir, num_augmentations, scale_range, rotation_range, target_size)
 
 # 示例调用
-images_dir = "c:/Users/Wangq1h/Desktop/bysj/AI+STM/Counting/pytorch-project/data/images"
-labels_dir = "c:/Users/Wangq1h/Desktop/bysj/AI+STM/Counting/pytorch-project/data/labels"
-output_dir = "c:/Users/Wangq1h/Desktop/bysj/AI+STM/Counting/pytorch-project/data"
+images_dir = "../data/tuned/images"  # 替换为你的图像文件夹路径
+labels_dir = "../data/tuned/labels"  # 替换为你的标签文件夹路径
+output_dir = "../data/tuned"  # 替换为你的输出文件夹路径
 process_all_files(images_dir, labels_dir, output_dir)

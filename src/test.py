@@ -210,7 +210,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     model = UNet(in_channels=1, out_channels=2).to(device)
-    model.load_state_dict(torch.load("../archive/250413-augmented-1000epoch/unet_final.pth", map_location=device))
+    model.load_state_dict(torch.load("./checkpoints_tuned/unet_tuned_final.pth", map_location=device))
     model.eval()
     
     test_img_dir = "../dataset/test/images"

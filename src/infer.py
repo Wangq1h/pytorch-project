@@ -9,6 +9,7 @@ from denoise import STMDenoiser
 from scipy.spatial import Delaunay
 from scipy.ndimage import maximum_filter
 from tqdm import tqdm
+import json
 
 
 grid_size = 14
@@ -23,9 +24,9 @@ CONFIG = {
     'NMS_KSIZE': int(grid_size * ratio),            # 非极大值抑制的核大小
     'PEAK_MIN_DISTANCE': int(grid_size * ratio),    # 峰值检测的最小距离
     'SCALE_FACTOR': 1,          # 图像放大倍数 对于
-    'RESIZE_TO': None,  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
-    'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
-    'INPUT_DIR': '../raw/target/images'    # 输入文件夹
+    'RESIZE_TO': (512,512),  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
+    'OUTPUT_DIR': '../raw/span_results',  # 输出文件夹
+    'INPUT_DIR': '../raw/vortexbgremoved'    # 输入文件夹
 }
 P = []
 Error= []
@@ -253,6 +254,16 @@ def infer_and_detect(image, model, device, tile_size=None, original_img=None, fi
     cv2.imwrite(heatmap_path, combined_heatmap_rgb)
     print(f"热力图已保存到: {heatmap_path}")
 
+    # 保存推断结果为 JSON 文件
+    json_output_path = os.path.join(CONFIG['OUTPUT_DIR'], f"{filename}.json")
+    coords_json = all_coords.copy()
+    for coord in coords_json:
+        coord["x"] = int(coord["x"])
+        coord["y"] = int(coord["y"])
+    with open(json_output_path, "w") as json_file:
+        json.dump(coords_json, json_file, indent=4)
+    print(f"推断结果已保存为 JSON 文件: {json_output_path}")
+
     return all_coords
 
 def show_tile_results(original_tile, tile, pred_heatmap, coords, x, y, tile_size, filename):
@@ -361,7 +372,7 @@ def process_image(image_path, model, device, tile_size=None):
         plane_subtraction=True,
         plane_order=1          # 使用平面拟合
     )
-    img = denoiser.denoise_image(img, is_large_image=True)  # 降噪后的图像
+    # img = denoiser.denoise_image(img, is_large_image=True)  # 降噪后的图像
     
     # 放大图像
     if CONFIG['SCALE_FACTOR'] != 1.0:
@@ -375,7 +386,7 @@ def process_image(image_path, model, device, tile_size=None):
     # 推理和寻峰
     all_coords = infer_and_detect(img, model, device, tile_size, original_img, filename)
 
-def delaunay_boundary_detection(coords, image_shape=None, margin=50):
+def delaunay_boundary_detection(coords, image_shape=(512,512), margin=4):
     """
     基于 Delaunay 三角剖分区分边界点和内部点，并考虑图像边缘的点。
     Args:
@@ -468,7 +479,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet(in_channels=1, out_channels=2).to(device)
     # model.load_state_dict(torch.load("checkpoints/unet_final.pth", map_location=device))
-    model.load_state_dict(torch.load("../archive/250413-augmented-1000epoch/unet_final.pth", map_location=device))
+    model.load_state_dict(torch.load("./checkpoints_tuned/unet_tuned_final.pth", map_location=device))
     model.eval()
 
     input_dir = CONFIG['INPUT_DIR']
