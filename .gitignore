@@ -1,2 +1,3 @@
 *.pth
 *.npy
+*.DS_Store
