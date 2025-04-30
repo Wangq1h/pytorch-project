@@ -213,8 +213,8 @@ def main():
     model.load_state_dict(torch.load("./checkpoints_tuned/unet_tuned_final.pth", map_location=device))
     model.eval()
     
-    test_img_dir = "../dataset/test/images"
-    test_label_dir = "../dataset/test/labels"
+    test_img_dir = "../data/tuned/images"
+    test_label_dir = "../data/tuned/labels_npy"
     # test_img_dir = "../raw/target/img"
     # test_label_dir = "../raw/target/labels"
     test_images = sorted(os.listdir(test_img_dir))

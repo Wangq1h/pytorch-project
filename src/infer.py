@@ -24,9 +24,9 @@ CONFIG = {
     'NMS_KSIZE': int(grid_size * ratio),            # 非极大值抑制的核大小
     'PEAK_MIN_DISTANCE': int(grid_size * ratio),    # 峰值检测的最小距离
     'SCALE_FACTOR': 1,          # 图像放大倍数 对于
-    'RESIZE_TO': (512,512),  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
-    'OUTPUT_DIR': '../raw/span_results',  # 输出文件夹
-    'INPUT_DIR': '../raw/vortexbgremoved'    # 输入文件夹
+    'RESIZE_TO': None,  # 将输入图像resize到指定的长宽 (宽, 高)，如果为None则不resize
+    'OUTPUT_DIR': '../raw/target/results',  # 输出文件夹
+    'INPUT_DIR': '../raw/target/images/'    # 输入文件夹
 }
 P = []
 Error= []
@@ -386,7 +386,7 @@ def process_image(image_path, model, device, tile_size=None):
     # 推理和寻峰
     all_coords = infer_and_detect(img, model, device, tile_size, original_img, filename)
 
-def delaunay_boundary_detection(coords, image_shape=(512,512), margin=4):
+def delaunay_boundary_detection(coords, image_shape=(512,512), margin=0.5):
     """
     基于 Delaunay 三角剖分区分边界点和内部点，并考虑图像边缘的点。
     Args:
@@ -398,6 +398,17 @@ def delaunay_boundary_detection(coords, image_shape=(512,512), margin=4):
     """
     # 提取点的坐标
     points = np.array([[coord["x"], coord["y"]] for coord in coords])
+    
+    # 首先检测图像边缘的点
+    edge_points = set()
+    if image_shape is not None:
+        height, width = image_shape
+        for i, point in enumerate(points):
+            if (
+                point[0] < margin or point[0] > width - margin or
+                point[1] < margin or point[1] > height - margin
+            ):
+                edge_points.add(i)
     
     # 进行 Delaunay 三角剖分
     tri = Delaunay(points)
@@ -419,27 +430,18 @@ def delaunay_boundary_detection(coords, image_shape=(512,512), margin=4):
     # 提取边界边（出现次数为 1 的边）
     boundary_edges = [edge for edge, count in edge_count.items() if count == 1]
     
-    # 提取边界点
-    boundary_points = set()
+    # 提取边界点，但排除已经在边缘点集合中的点
     for edge in boundary_edges:
-        boundary_points.update(edge)
-    
-    # 如果提供了图像形状，进一步检测图像边缘的点
-    if image_shape is not None:
-        height, width = image_shape
-        for i, point in enumerate(points):
-            if (
-                point[0] < margin or point[0] > width - margin or
-                point[1] < margin or point[1] > height - margin
-            ):
-                boundary_points.add(i)
+        for point_idx in edge:
+            if point_idx not in edge_points:
+                edge_points.add(point_idx)
     
     # 提取内部点
     all_points = set(range(len(points)))
-    internal_points = all_points - boundary_points
+    internal_points = all_points - edge_points
     
     # 将点索引转换回原始坐标
-    boundary_coords = [coords[i] for i in boundary_points]
+    boundary_coords = [coords[i] for i in edge_points]
     internal_coords = [coords[i] for i in internal_points]
     
     return internal_coords, boundary_coords

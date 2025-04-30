@@ -35,6 +35,11 @@ def main():
     save_dir = "checkpoints_tuned"  # 保存微调模型的路径
     os.makedirs(save_dir, exist_ok=True)
 
+    # 创建loss记录文件
+    loss_file_path = os.path.join(save_dir, "training_loss.txt")
+    loss_file = open(loss_file_path, "w")
+    loss_file.write("Epoch,Loss\n")  # 写入CSV格式的表头
+
     # 超参数
     batch_size = 32
     lr = 1e-4  # 微调时使用较小的学习率
@@ -73,18 +78,28 @@ def main():
     criterion = nn.BCEWithLogitsLoss().to(device)
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
 
-    # 开始微调
-    for epoch in range(num_epochs):
-        train_loss = train_one_epoch(model, tuned_loader, optimizer, criterion, device)
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss:.4f}")
+    try:
+        # 开始微调
+        for epoch in range(num_epochs):
+            train_loss = train_one_epoch(model, tuned_loader, optimizer, criterion, device)
+            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {train_loss:.4f}")
+            
+            # 写入loss到文件
+            loss_file.write(f"{epoch+1},{train_loss:.4f}\n")
+            loss_file.flush()  # 立即写入磁盘
 
-        # 每 10 个 epoch 保存一次模型
-        if (epoch + 1) % 10 == 0:
-            torch.save(model.state_dict(), os.path.join(save_dir, f"unet_tuned_epoch_{epoch+1}.pth"))
+            # 每 10 个 epoch 保存一次模型
+            if (epoch + 1) % 10 == 0:
+                torch.save(model.state_dict(), os.path.join(save_dir, f"unet_tuned_epoch_{epoch+1}.pth"))
 
-    # 最终保存模型
-    torch.save(model.state_dict(), os.path.join(save_dir, "unet_tuned_final.pth"))
-    print("Fine-tuning completed and model saved.")
+        # 最终保存模型
+        torch.save(model.state_dict(), os.path.join(save_dir, "unet_tuned_final.pth"))
+        print("Fine-tuning completed and model saved.")
+        
+    finally:
+        # 确保文件被正确关闭
+        loss_file.close()
+        print(f"Training loss has been saved to {loss_file_path}")
 
 if __name__ == "__main__":
     main()
